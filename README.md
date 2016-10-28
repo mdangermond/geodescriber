@@ -18,7 +18,7 @@
 
 <br>
 <p><img src="https://github.com/mdangermond/geodescriber/blob/master/WestgardPass.png"></p>
-<p><sub><i>By Marshal Hedin from San Diego - Westgard Pass Rd (Hwy 168), E of Westgard Pass, Inyo NF</sub></i></p>
+<p><sub><i>Photo Credit: Marshal Hedin - Westgard Pass Rd (Hwy 168), E of Westgard Pass, Inyo NF</sub></i></p>
 <br>
 
 <i><b>Sample description (Serengeti National Park, Tanzania):</b></i>
