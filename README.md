@@ -6,15 +6,15 @@
 
 • It can be made available to text-to-speech engines for section 508 compliance. Therefore, it can describe what a map is showing to visually impaired readers.
 
-• GeoDescriber’s descriptions are useful in online map popups.
+• <b>GeoDescriber's</b> descriptions are useful in online map popups.
 
-• If a professional writer is used to edit the output, GeoDescriber simplifies their task. They simply edit GeoDescriber’s descriptions to make them their own style.
+• If a professional writer is used to edit the output, <b>GeoDescriber</b> simplifies their task. They simply edit GeoDescriber’s descriptions to make them their own style.
 
-• If a professional writer is not used to edit the output, GeoDescriber’s descriptions are already finished and grammatically correct.
+• If a professional writer is not used to edit the output, <b>GeoDescriber's</b> descriptions are already finished and grammatically correct.
 
-• GeoDescriber is useful in essays, for wikipedia, or wherever technical descriptions of landscapes are required.
+• <b>GeoDescriber</b> is useful in essays, for wikipedia, or wherever technical descriptions of landscapes are required.
 
-GeoDescriber may be adapted and applied to other physical descriptions, as well as to cultural or economic descriptions.
+<b>GeoDescriber</b> may be adapted and applied to other physical descriptions, as well as to cultural or economic descriptions.
 
 <br>
 
