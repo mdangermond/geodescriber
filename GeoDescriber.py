@@ -27,11 +27,16 @@
 #               Describe a polygon based on Landcover, Landform, Bioclimate, Lithology.
 #               Analyzes ten landscape services from the Living Atlas and synthesizes text.
 # Authors:      Deniz Karagulle and Michael Dangermond
-# Created:      10/14/2015
-# Notes:        Please change line 80 to use your own polygon feature class.
-#               Change line 60 to a valid scratch/temporary geodatabase,
-#               and change line 91-93 to use your own credentials.
+# Created:      10/14/2015, revised 10/17/2017
+# Notes:        Please change line 87 to use your own polygon feature class.
+#               Change line 65 to a valid scratch/temporary geodatabase,
+#               and change line 98-100 to use your own credentials.
+#
+#               As of 9/20/2017 a bug in arcpy.JoinField_management() in 10.5.1 joins
+#               a field to an in_memory table four times. Until this is resolved use the
+#               function JoinField_Workaround() instead.
 #-------------------------------------------------------------------------------
+
 
 try:
     # Import modules and start the clock
@@ -57,12 +62,14 @@ try:
 
     arcpy.env.overwriteOutput=True
     #output is the geodatabase containing some rasters created by GeoDescriber.
-    output= r"D:\gis\EcoPhys\150707-NewEfCategories\MultipleFeatureTest.gdb"
+    output= r"C:\gis\GeoDescriber\GeoDescriber.gdb"
     arcpy.env.workspace = "in_memory"
     arcpy.env.scratchWorkspace ="in_memory"
     arcpy.env.compression = "LZW"
     #os.environ["TEMP"] = arcpy.env.scratchWorkspace
     #os.environ["TMP"] = arcpy.env.scratchWorkspace
+    tempspace = output
+    #tempspace = r"C:\gis\GeoDescriber\notinmem.gdb"
     inmem = "in_memory"
 
     #output=arcpy.GetParameterAsText(0)
@@ -77,7 +84,7 @@ try:
     #---------------------------------------------------------------------------
     #---------Provide the path to the polygon you would like to characterize----
     #inFeatureClass = arcpy.GetParameterAsText(0)
-    inFeatLyr=r"D:\gis\EcoPhys\150707-NewEfCategories\MultipleFeatureTest.gdb\WestgardPass"
+    inFeatLyr=r"C:\gis\GeoDescriber\GeoDescriber.gdb\Austria"
 
 except:
     print("A connection to a valid Spatial Analyst license, a valid")
@@ -475,7 +482,7 @@ def getResult(layerInfo):
         p("  . [{0}] Begin: Make image server layer".format(id))
         #make image server layer and copy raster.
         #print("make image server layer...")
-        arcpy.management.MakeImageServerLayer(layerInfo['url'], imageLayer, layerInfo['extentlayer'],"#","#","#","#","#",layerInfo['cellsize'])
+        arcpy.MakeImageServerLayer_management(layerInfo['url'], imageLayer, layerInfo['extentlayer'],"#","#","#","#","#",layerInfo['cellsize'],"#",layerInfo['processingTemplate'])
         p ( arcpy.GetMessages())
         m += arcpy.GetMessages() + "\n"
         p("  . [{0}] Done:  Make image server layer".format(id))
@@ -529,7 +536,7 @@ def getResult2(layerInfo2):
         #print("make image server layer...")
         p("  . [{0}] Done:  CreateGISServerCOnnection".format(id))
         p("  . [{0}] Begin: Make image server layer".format(id))
-        arcpy.management.MakeImageServerLayer(layerInfo2['url'], imageLayer, layerInfo2['extentlayer'],"#","#","#","#","#",layerInfo2['cellsize'])
+        arcpy.management.MakeImageServerLayer(layerInfo2['url'], imageLayer, layerInfo2['extentlayer'],"#","#","#","#","#",layerInfo2['cellsize'],"#",layerInfo2['processingTemplate'])
         p ( arcpy.GetMessages())
         m += arcpy.GetMessages() + "\n"
         p("  . [{0}] Done:  Make image server layer".format(id))
@@ -560,19 +567,37 @@ def percent(featurelayer, newlayer, casefield):
     are used later to craft sentences in the description.
 
     """
-    statFields=[["Count","SUM"]]
-    stattable=arcpy.Statistics_analysis (featurelayer, newlayer, statFields, casefield)
-    arcpy.AddField_management (stattable, "percent", "DOUBLE")
-    sum1=0
-    with arcpy.da.SearchCursor(stattable,["SUM_Count"]) as cursors:
-        for row1 in cursors:
-            sum1=row1[0]+sum1
-    with arcpy.da.UpdateCursor(stattable,["SUM_Count","percent"]) as cursor:
-        for row in cursor:
-            row[1]=(row[0]*100)/sum1
-            cursor.updateRow(row)
-    joinedField=["FREQUENCY","percent"]
-    arcpy.JoinField_management(featurelayer, casefield, stattable, casefield, joinedField)
+
+    if arcversion == '10.5.1':
+        ##tempspace = "C:\\gis\\GeoDescriber\\notinmem.gdb"
+        print (featurelayer + " is ready for the percent function")
+        statFields=[["Count","SUM"]]
+        arcpy.Statistics_analysis(featurelayer, newlayer, statFields, casefield)
+        arcpy.AddField_management(newlayer, "percent", "DOUBLE")
+        sum1=0
+        with arcpy.da.SearchCursor(newlayer,["SUM_Count"]) as cursors:
+            for row1 in cursors:
+                sum1=row1[0]+sum1
+        with arcpy.da.UpdateCursor(newlayer,["SUM_Count","percent"]) as cursor:
+            for row in cursor:
+                row[1]=(row[0]*100)/sum1
+                cursor.updateRow(row)
+        joinedField=["FREQUENCY","percent"]
+        JoinField_Workaround(featurelayer, casefield, newlayer, casefield, joinedField)
+    else:
+        statFields=[["Count","SUM"]]
+        stattable=arcpy.Statistics_analysis (featurelayer, newlayer, statFields, casefield)
+        arcpy.AddField_management (stattable, "percent", "DOUBLE")
+        sum1=0
+        with arcpy.da.SearchCursor(stattable,["SUM_Count"]) as cursors:
+            for row1 in cursors:
+                sum1=row1[0]+sum1
+        with arcpy.da.UpdateCursor(stattable,["SUM_Count","percent"]) as cursor:
+            for row in cursor:
+                row[1]=(row[0]*100)/sum1
+                cursor.updateRow(row)
+        joinedField=["FREQUENCY","percent"]
+        arcpy.JoinField_management(featurelayer, casefield, stattable, casefield, joinedField)
 
 #find and return the largest value in the percent table.
 def largest(layer,field):
@@ -645,6 +670,43 @@ def restofValues (featurelayer, largVal, dictionary):
                 restvalues="while "+stringv+". "
             restvaluescount = 0
     return restvalues
+
+
+def JoinField_Workaround (indataset,infield,jointable,joinfld,workaroundfields):
+    """JoinField_Workaround(indataset,infield,jointable,joinfld,workaroundfields) # joinfield
+
+    Joins a field to a table, but works around the bug in 10.5.1 for joining a
+    field to a dataset that is in_memory. Trying to use joinfield_management on
+    with the unfixed bug joins the field four times. This gets around that problem.
+    """
+
+    try:
+        if arcpy.Exists(tempspace+"\\junkg"):
+       	    arcpy.Delete_management(tempspace+"\\junkg")
+        if arcpy.Exists(tempspace+"\\junktbl"):
+       	    arcpy.Delete_management(tempspace+"\\junktbl")
+        arcpy.CopyRaster_management(indataset,tempspace+"\\junkg")
+        arcpy.CopyRows_management(jointable,tempspace+"\\junktbl")
+        if arcpy.Exists(indataset):
+       	    arcpy.Delete_management(indataset)
+        arcpy.JoinField_management(tempspace+"\\junkg", infield, tempspace+"\\junktbl", joinfld, workaroundfields)
+        arcpy.CopyRaster_management(tempspace+"\\junkg",indataset)
+        feature = tempspace+"\\junktbl"
+        if arcpy.Exists(feature):
+       	    arcpy.Delete_management(feature)
+        feature = tempspace+"\\junkg"
+        if arcpy.Exists(feature):
+       	    arcpy.Delete_management(feature)
+    except:
+        # Get the traceback object
+        tb = sys.exc_info()[2]
+        tbinfo = traceback.format_tb(tb)[0]
+        # Concatenate information together concerning the error into a message string
+        pymsg = tbinfo + "\n" + str(sys.exc_type)+ ": " + str(sys.exc_value)
+        # Write Python error messages to log
+        err= pymsg + "\n"
+        print(err)
+
 
 #-------------------------------------------------------------------------------
 #-----------------retrieve landscape6 and landscape7 rasters--------------------
@@ -750,16 +812,16 @@ def GeoDescriber():
 
         #Parameters needed by the getResult and processResult methods are stored in this dictionary.
         layerInfo = [
-            {'name': "Elevation", 'url': serviceURLElevation, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value", "Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize},
-            {'name': "Population" , 'url': serviceURLPopulation, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize},
-            {'name': "Landform", 'url':serviceURLLandform, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List': ["EF_Value", "ClassName"], 'service': service7, 'serviceURL':serviceURL7, 'cellsize':cellsize},
-            {'name': "Lithology", 'url': serviceURLLithology, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value", "EF_Litho"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize},
-            {'name': "Bioclimate", 'url': serviceURLBioclimate, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["BioClim","Bioclimate"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize},
-            {'name': "Landcover", 'url': serviceURLLandcover, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["ELU_ID","ClassName"],'service': service7, 'serviceURL':serviceURL7, 'cellsize':cellsize},
-            {'name': "Slope" , 'url': serviceURLSlope, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize},
-            {'name': "Water" , 'url': serviceURLWater, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':30},
-            {'name': "Diversity" , 'url': serviceURLDiversity, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","ecoPhysdiv"],'service': service7, 'serviceURL':serviceURL7, 'cellsize':cellsize},
-            {'name': "Biomass" , 'url': serviceURLBiomass, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize}
+            {'name': "Elevation", 'url': serviceURLElevation, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value", "Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize, 'processingTemplate':'#'},
+            {'name': "Population" , 'url': serviceURLPopulation, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize, 'processingTemplate':'#'},
+            {'name': "Landform", 'url': serviceURLLandform, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List': ["Value", "ClassName"], 'service': service7, 'serviceURL':serviceURL7, 'cellsize':cellsize, 'processingTemplate':"Ecophysiographic_Facet_Landform_Classes.rft"},
+            {'name': "Lithology", 'url': serviceURLLithology, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value", "EF_Litho"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize, 'processingTemplate':'#'},
+            {'name': "Bioclimate", 'url': serviceURLBioclimate, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["BioClim","Bioclimate"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize, 'processingTemplate':'#'},
+            {'name': "Landcover", 'url': serviceURLLandcover, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["ELU_ID","ClassName"],'service': service7, 'serviceURL':serviceURL7, 'cellsize':cellsize, 'processingTemplate':'#'},
+            {'name': "Slope" , 'url': serviceURLSlope, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize, 'processingTemplate':'#'},
+            {'name': "Water" , 'url': serviceURLWater, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':30,  'processingTemplate':'#'},
+            {'name': "Diversity" , 'url': serviceURLDiversity, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","ecoPhysdiv"],'service': service7, 'serviceURL':serviceURL7, 'cellsize':cellsize, 'processingTemplate':'#'},
+            {'name': "Biomass" , 'url': serviceURLBiomass, 'scratchFolder': tempFolder, 'extentlayer': extentlayer_feature, 'List':["Value","Count"],'service': service6, 'serviceURL':serviceURL6, 'cellsize':cellsize, 'processingTemplate':'#'}
             ]
 
 #------------------------------------------------------------------------
@@ -778,39 +840,76 @@ def GeoDescriber():
         pool = mp.Pool(5, initializer=initPool, initargs=(lock,))
         results = [pool.apply_async(getResult, args=(a,)) for a in layerInfo]
         L = []
-        for z in results:
-            rasterInfo = z.get()
-            if rasterInfo is None:
-                continue
-            L = L + [rasterInfo]
-        for r in L:
-            print("fetching " + r['name'] + " from server")
-            arcpy.env.outputCoordinateSystem = sr
-            outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), r['path'])
-            p ( arcpy.GetMessages())
-            od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
-            #Replace nodata from population estimate raster with zero. That way the sums
-            #still work. Nodata will will cause GeoDescriber() to fail.
-            if r['name'] == "Population":
-                if not arcpy.sa.Raster(inmem+"\\Population_R").maximum > 0:
-                    outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), 0)
-                    od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
-            if r['name'] == "Biomass":
-                if not arcpy.sa.Raster(inmem+"\\Biomass_R").maximum > 0:
+        if arcversion == '10.5.1':
+            for z in results:
+                rasterInfo = z.get()
+                if rasterInfo is None:
+                    continue
+                L = L + [rasterInfo]
+            for r in L:
+                print("fetching " + r['name'] + " from server")
+                print(r['path'])
+                arcpy.env.outputCoordinateSystem = sr
+                outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), r['path'])
+                p ( arcpy.GetMessages())
+                od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
+                #Replace nodata from population estimate raster with zero. That way the sums
+                #still work. Nodata will will cause GeoDescriber() to fail.
+                if r['name'] == "Population":
+                    if not arcpy.sa.Raster(inmem+"\\Population_R").maximum > 0:
+                        outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), 0)
+                        od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
+                if r['name'] == "Biomass":
+                    if not arcpy.sa.Raster(inmem+"\\Biomass_R").maximum > 0:
+                        p ( arcpy.GetMessages())
+                        saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                        ##arcpy.CopyRaster_management(inmem+"\\"+ r['name'] +"_R", r"C:\gis\GeoDescriber\current.gdb"+"\\"+ r['name'] +"_R")
+                    else:
+                        p ( arcpy.GetMessages())
+                        saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                        JoinField_Workaround(inmem+"\\"+ r['name'] +"_R", "Value", r['path'], "Value", r['List'])
+                        p ( arcpy.GetMessages())
+                        outputRaster = None
+                else:
                     p ( arcpy.GetMessages())
                     saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                    JoinField_Workaround(inmem+"\\"+ r['name'] +"_R", "Value", r['path'], "Value", r['List'])
+                    p ( arcpy.GetMessages())
+                    outputRaster = None
+        else:
+            for z in results:
+                rasterInfo = z.get()
+                if rasterInfo is None:
+                    continue
+                L = L + [rasterInfo]
+            for r in L:
+                print("fetching " + r['name'] + " from server")
+                arcpy.env.outputCoordinateSystem = sr
+                outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), r['path'])
+                p ( arcpy.GetMessages())
+                od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
+                #Replace nodata from population estimate raster with zero. That way the sums
+                #still work. Nodata will will cause GeoDescriber() to fail.
+                if r['name'] == "Population":
+                    if not arcpy.sa.Raster(inmem+"\\Population_R").maximum > 0:
+                        outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), 0)
+                        od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
+                if r['name'] == "Biomass":
+                    if not arcpy.sa.Raster(inmem+"\\Biomass_R").maximum > 0:
+                        p ( arcpy.GetMessages())
+                        saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                    else:
+                        p ( arcpy.GetMessages())
+                        saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                        d = arcpy.JoinField_management(saved_raster, "Value", r['path'], "Value", r['List'])
+                        p ( arcpy.GetMessages())
+                        outputRaster = None
                 else:
                     p ( arcpy.GetMessages())
                     saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
                     d = arcpy.JoinField_management(saved_raster, "Value", r['path'], "Value", r['List'])
                     p ( arcpy.GetMessages())
                     outputRaster = None
-            else:
-                p ( arcpy.GetMessages())
-                saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
-                d = arcpy.JoinField_management(saved_raster, "Value", r['path'], "Value", r['List'])
-                p ( arcpy.GetMessages())
-                outputRaster = None
         p(". Shutting down worker pool. Elapsed time: {0:.2f} seconds.".format(time.time()-t0))
         pool.close()
         pool.join()
@@ -862,39 +961,69 @@ def GeoDescriber():
                 #note that this time there is only one process in the pool at a time.
                 pool = mp.Pool(1, initializer=initPool, initargs=(lock,))
                 results = [pool.apply_async(getResult2, args=(a,)) for a in layerInfo2]
-                L = []
+                L2 = []
                 for z in results:
                     rasterInfo = z.get()
                     if rasterInfo is None:
                         continue
-                    L = L + [rasterInfo]
-                    print(L)
-                for r in L:
-                    print("fetching " + r['name'] + " from server")
-                    arcpy.env.outputCoordinateSystem = sr
-                    outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), r['path'])
-                    p ( arcpy.GetMessages())
-                    od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
-                    if r['name'] == "Population":
-                        if not arcpy.sa.Raster(inmem+"\\Population_R").maximum > 0:
-                            outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), 0)
-                            od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
-                    if r['name'] == "Biomass":
-                        if not arcpy.sa.Raster(inmem+"\\Biomass_R").maximum > 0:
+                    L2 = L2 + [rasterInfo]
+                    print(L2)
+                for r in L2:
+                    if arcversion == '10.5.1':
+                        print("fetching " + r['name'] + " from server")
+                        ##arcpy.CopyRaster_management(r['path'], "C:\\gis\\GeoDescriber\\junk\\" + r['name'] + ".TIF")
+                        arcpy.env.outputCoordinateSystem = sr
+                        outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), r['path'])
+                        p ( arcpy.GetMessages())
+                        od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
+                        if r['name'] == "Population":
+                            if not arcpy.sa.Raster(inmem+"\\Population_R").maximum > 0:
+                                outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), 0)
+                                od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
+                        if r['name'] == "Biomass":
+                            if not arcpy.sa.Raster(inmem+"\\Biomass_R").maximum > 0:
+                                p ( arcpy.GetMessages())
+                                saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                                arcpy.BuildRasterAttributeTable_management(inmem+"\\"+ r['name'] +"_R")
+                                ##arcpy.CopyRaster_management(inmem+"\\"+ r['name'] +"_R", r"C:\gis\GeoDescriber\current.gdb"+"\\"+ r['name'] +"_R")
+                            else:
+                                p ( arcpy.GetMessages())
+                                saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                                JoinField_Workaround(inmem+"\\"+ r['name'] +"_R", "Value", r['path'], "Value", r['List'])
+                                p ( arcpy.GetMessages())
+                                outputRaster = None
+                        else:
                             p ( arcpy.GetMessages())
                             saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                            JoinField_Workaround(inmem+"\\"+ r['name'] +"_R", "Value", r['path'], "Value", r['List'])
+                            p ( arcpy.GetMessages())
+                            outputRaster = None
+                    else:
+                        print("fetching " + r['name'] + " from server")
+                        arcpy.env.outputCoordinateSystem = sr
+                        outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), r['path'])
+                        p ( arcpy.GetMessages())
+                        od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
+                        if r['name'] == "Population":
+                            if not arcpy.sa.Raster(inmem+"\\Population_R").maximum > 0:
+                                outputRaster = Con(arcpy.Raster(inmem+"\\con_extent"), 0)
+                                od = outputRaster.save(inmem +"\\"+ r['name'] +"_R")
+                        if r['name'] == "Biomass":
+                            if not arcpy.sa.Raster(inmem+"\\Biomass_R").maximum > 0:
+                                p ( arcpy.GetMessages())
+                                saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                            else:
+                                p ( arcpy.GetMessages())
+                                saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
+                                d = arcpy.JoinField_management(saved_raster, "Value", r['path'], "Value", r['List'])
+                                p ( arcpy.GetMessages())
+                                outputRaster = None
                         else:
                             p ( arcpy.GetMessages())
                             saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
                             d = arcpy.JoinField_management(saved_raster, "Value", r['path'], "Value", r['List'])
                             p ( arcpy.GetMessages())
                             outputRaster = None
-                    else:
-                        p ( arcpy.GetMessages())
-                        saved_raster=arcpy.Raster(inmem+"\\"+ r['name'] +"_R")
-                        d = arcpy.JoinField_management(saved_raster, "Value", r['path'], "Value", r['List'])
-                        p ( arcpy.GetMessages())
-                        outputRaster = None
                 p(". Shutting down worker pool. Elapsed time: {0:.2f} seconds.".format(time.time()-t0))
                 pool.close()
                 pool.join()
@@ -909,18 +1038,16 @@ def GeoDescriber():
             print("Also, shapefiles are not yet supported by this script...")
             print("Be sure your extent layer is a polygon feature class.")
             print()
-
             raise
-
         except:
-                    # Get the traceback object
-                    tb = sys.exc_info()[2]
-                    tbinfo = traceback.format_tb(tb)[0]
-                    # Concatenate information together concerning the error into a message string
-                    pymsg = tbinfo + "\n" + str(sys.exc_type)+ ": " + str(sys.exc_value)
-                    # Write Python error messages to log
-                    err= pymsg + "\n"
-                    print(err)
+            # Get the traceback object
+            tb = sys.exc_info()[2]
+            tbinfo = traceback.format_tb(tb)[0]
+            # Concatenate information together concerning the error into a message string
+            pymsg = tbinfo + "\n" + str(sys.exc_type)+ ": " + str(sys.exc_value)
+            # Write Python error messages to log
+            err= pymsg + "\n"
+            print(err)
 
         try:
             #Delete the temporary folder used to store TIF rasters retrieved from the server.
@@ -933,12 +1060,15 @@ def GeoDescriber():
             currentTime = time.clock()
             print(str(currentTime-startTime)+" seconds. Projecting elevation to webmerc to derive aspect...")
             arcpy.ProjectRaster_management(inmem+"\\Elevation_R",inmem+"\\northupg",webmerc,"NEAREST",cellsize)
+            arcpy.BuildRasterAttributeTable_management(inmem+"\\northupg", "Overwrite")
             currentTime = time.clock()
             print(str(currentTime-startTime)+" seconds. Deriving aspect from webmerc elevation raster...")
-            xbz = arcpy.sa.Aspect(inmem+"\\northupg")
+            #xbz = arcpy.sa.Aspect(inmem+"\\northupg")
+            xbz = Aspect(inmem+"\\northupg")
             currentTime = time.clock()
             print(str(currentTime-startTime)+" seconds. Projecting aspect raster back to Mollweide...")
             arcpy.ProjectRaster_management(xbz,inmem+"\\aspectg",sr,"NEAREST",cellsize)
+            #arcpy.BuildRasterAttributeTable_management(inmem+"\\aspectg", "Overwrite")
             currentTime = time.clock()
             print(str(currentTime-startTime)+" seconds. Generating remap range for aspect raster...")
             aspectRemapRange = RemapRange([[0,45,1],[45,90,2],[90,135,3],[135,180,4],[180,225,5],[225,270,6],[270,315,7],[315,360,8]])
@@ -976,49 +1106,122 @@ def GeoDescriber():
             print(str(currentTime-startTime)+" seconds have elapsed so far")
             print("Calculating percentages...")
             list_FC=[inmem+"\\Bioclimate_R", inmem+"\\Landform_R", inmem+"\\Lithology_R", inmem+"\\Landcover_R"]
-            for fc in list_FC:
-                if fc.endswith("Bioclimate_R") == True:
-                    fields = arcpy.ListFields(fc)
-                    for field in fields:
-                        if field.name == "ClassName":
-                            arcpy.DeleteField_management(fc,"ClassName")
-                            print("Deleting ClassName...")
-                    arcpy.AddField_management(inmem+"\\Bioclimate_R","ClassName", "TEXT", "", "", "250" )
-                    with arcpy.da.UpdateCursor(inmem+"\\Bioclimate_R", ("Bioclimate","ClassName")) as cursor:
-                        for row in cursor:
-                            row[1]=  row[0]
-                            cursor.updateRow(row)
-                    lookmeupl = arcpy.sa.Lookup(inmem+"\\Bioclimate_R","ClassName")
-                    lookmeupl.save(inmem+"\\Bioclimate_R")
-                    percent(inmem+"\\Bioclimate_R", inmem+"\\Bioclimates_ST","ClassName")
-                    arcpy.CopyRows_management(inmem+"\\Bioclimate_R",inmem+"\\Bioclimates_CR")
-                elif fc.endswith("Landform_R") == True:
-                    lookmeupl = arcpy.sa.Lookup(inmem+"\\Landform_R","ClassName")
-                    lookmeupl.save(inmem+"\\Landform_R")
-                    percent(inmem+"\\Landform_R",inmem+"\\Landform_ST","ClassName")
-                    arcpy.CopyRows_management(inmem+"\\Landform_R",inmem+"\\Landform_CR")
-                elif fc.endswith("Lithology_R") == True:
-                    fields = arcpy.ListFields(fc)
-                    for field in fields:
-                        if field.name == "ClassName":
-                            arcpy.DeleteField_management(fc,"ClassName")
-                            print("Deleting ClassName...")
-                    arcpy.AddField_management(inmem+"\\Lithology_R","ClassName", "TEXT", "", "", "250" )
-                    with arcpy.da.UpdateCursor(inmem+"\\Lithology_R", ("EF_Litho","ClassName")) as cursor:
-                        for row in cursor:
-                            row[1]=  row[0]
-                            cursor.updateRow(row)
-                    lookmeupl = arcpy.sa.Lookup(inmem+"\\Lithology_R","ClassName")
-                    lookmeupl.save(inmem+"\\Lithology_R")
-                    percent(inmem+"\\Lithology_R",inmem+"\\Lithology_ST","ClassName")
-                    arcpy.CopyRows_management(inmem+"\\Lithology_R",inmem+"\\Lithology_CR")
-                elif fc.endswith("Landcover_R") == True:
-                    lookmeupl = arcpy.sa.Lookup(inmem+"\\Landcover_R","ClassName")
-                    lookmeupl.save(inmem+"\\Landcover_R")
-                    percent(inmem+"\\Landcover_R",inmem+"\\Landcover_ST","ClassName")
-                    arcpy.CopyRows_management(inmem+"\\Landcover_R",inmem+"\\Landcover_CR")
-                else:
-                    p("*** dictionaries starting ")
+            if arcversion == '10.5.1':
+                for fc in list_FC:
+                    if fc.endswith("Bioclimate_R") == True:
+                        fields = arcpy.ListFields(fc)
+                        for field in fields:
+                            if field.name == "ClassName":
+                                arcpy.DeleteField_management(fc,"ClassName")
+                        arcpy.AddField_management(inmem+"\\Bioclimate_R","ClassName", "TEXT", "", "", "250")
+                        with arcpy.da.UpdateCursor(inmem+"\\Bioclimate_R", ['Bioclimate','ClassName']) as cursor:
+                            for row in cursor:
+                                row[1] = row[0]
+                                cursor.updateRow(row)
+                        lookmeupl = arcpy.sa.Lookup(inmem+"\\Bioclimate_R","ClassName")
+                        lookmeupl.save(inmem+"\\Bioclimate_R")
+                        percent(inmem+"\\Bioclimate_R", inmem+"\\Bioclimates_ST","ClassName")
+                        arcpy.CopyRows_management(inmem+"\\Bioclimate_R",inmem+"\\Bioclimates_CR")
+                    elif fc.endswith("Landform_R") == True:
+                        fields = arcpy.ListFields(fc)
+                        for field in fields:
+                            if field.name == "ClassName_1":
+                                for field in fields:
+                                    if field.name == "ClassName":
+                                        arcpy.DeleteField_management(fc,"ClassName")
+                                arcpy.AddField_management(inmem+"\\Landform_R","ClassName", "TEXT", "", "", "250")
+                                with arcpy.da.UpdateCursor(inmem+"\\Landform_R", ['ClassName_1','ClassName']) as cursor:
+                                    for row in cursor:
+                                        row[1] = row[0]
+                                        cursor.updateRow(row)
+                                fields = arcpy.ListFields(fc)
+                                for field in fields:
+                                    if field.name == "ClassName_1":
+                                        arcpy.DeleteField_management(fc,"ClassName_1")
+                        lookmeup2 = arcpy.sa.Lookup(inmem+"\\Landform_R","ClassName")
+                        lookmeup2.save(inmem+"\\Landform_R")
+                        percent(inmem+"\\Landform_R",inmem+"\\Landform_ST","ClassName")
+                        arcpy.CopyRows_management(inmem+"\\Landform_R",inmem+"\\Landform_CR")
+                    elif fc.endswith("Lithology_R") == True:
+                        fields = arcpy.ListFields(fc)
+                        for field in fields:
+                            if field.name == "ClassName":
+                                arcpy.DeleteField_management(fc,"ClassName")
+                        arcpy.AddField_management(inmem+"\\Lithology_R","ClassName", "TEXT", "", "", "250" )
+                        with arcpy.da.UpdateCursor(inmem+"\\Lithology_R", ("EF_Litho","ClassName")) as cursor:
+                            for row in cursor:
+                                row[1]=row[0]
+                                cursor.updateRow(row)
+                        lookmeup3 = arcpy.sa.Lookup(inmem+"\\Lithology_R","ClassName")
+                        lookmeup3.save(inmem+"\\Lithology_R")
+                        percent(inmem+"\\Lithology_R",inmem+"\\Lithology_ST","ClassName")
+                        arcpy.CopyRows_management(inmem+"\\Lithology_R",inmem+"\\Lithology_CR")
+                    elif fc.endswith("Landcover_R") == True:
+                        fields = arcpy.ListFields(fc)
+                        for field in fields:
+                            if field.name == "ClassName_1":
+                                for field in fields:
+                                    if field.name == "ClassName":
+                                        arcpy.DeleteField_management(fc,"ClassName")
+                                arcpy.AddField_management(inmem+"\\Landcover_R","ClassName", "TEXT", "", "", "250")
+                                with arcpy.da.UpdateCursor(inmem+"\\Landcover_R", ['ClassName_1','ClassName']) as cursor:
+                                    for row in cursor:
+                                        row[1] = row[0]
+                                        cursor.updateRow(row)
+                                fields = arcpy.ListFields(fc)
+                                for field in fields:
+                                    if field.name == "ClassName_1":
+                                        arcpy.DeleteField_management(fc,"ClassName_1")
+                        lookmeup4 = arcpy.sa.Lookup(inmem+"\\Landcover_R","ClassName")
+                        lookmeup4.save(inmem+"\\Landcover_R")
+                        percent(inmem+"\\Landcover_R",inmem+"\\Landcover_ST","ClassName")
+                        arcpy.CopyRows_management(inmem+"\\Landcover_R",inmem+"\\Landcover_CR")
+                    else:
+                        p("*** dictionaries starting ")
+            else:
+                for fc in list_FC:
+                    if fc.endswith("Bioclimate_R") == True:
+                        fields = arcpy.ListFields(fc)
+                        for field in fields:
+                            if field.name == "ClassName":
+                                arcpy.DeleteField_management(fc,"ClassName")
+                                print("Deleting ClassName...")
+                        arcpy.AddField_management(inmem+"\\Bioclimate_R","ClassName", "TEXT", "", "", "250" )
+                        with arcpy.da.UpdateCursor(inmem+"\\Bioclimate_R", ("Bioclimate","ClassName")) as cursor:
+                            for row in cursor:
+                                row[1]=  row[0]
+                                cursor.updateRow(row)
+                        lookmeupl = arcpy.sa.Lookup(inmem+"\\Bioclimate_R","ClassName")
+                        lookmeupl.save(inmem+"\\Bioclimate_R")
+                        percent(inmem+"\\Bioclimate_R", inmem+"\\Bioclimates_ST","ClassName")
+                        arcpy.CopyRows_management(inmem+"\\Bioclimate_R",inmem+"\\Bioclimates_CR")
+                    elif fc.endswith("Landform_R") == True:
+                        lookmeupl = arcpy.sa.Lookup(inmem+"\\Landform_R","ClassName")
+                        lookmeupl.save(inmem+"\\Landform_R")
+                        percent(inmem+"\\Landform_R",inmem+"\\Landform_ST","ClassName")
+                        arcpy.CopyRows_management(inmem+"\\Landform_R",inmem+"\\Landform_CR")
+                    elif fc.endswith("Lithology_R") == True:
+                        fields = arcpy.ListFields(fc)
+                        for field in fields:
+                            if field.name == "ClassName":
+                                arcpy.DeleteField_management(fc,"ClassName")
+                                print("Deleting ClassName...")
+                        arcpy.AddField_management(inmem+"\\Lithology_R","ClassName", "TEXT", "", "", "250" )
+                        with arcpy.da.UpdateCursor(inmem+"\\Lithology_R", ("EF_Litho","ClassName")) as cursor:
+                            for row in cursor:
+                                row[1]=  row[0]
+                                cursor.updateRow(row)
+                        lookmeupl = arcpy.sa.Lookup(inmem+"\\Lithology_R","ClassName")
+                        lookmeupl.save(inmem+"\\Lithology_R")
+                        percent(inmem+"\\Lithology_R",inmem+"\\Lithology_ST","ClassName")
+                        arcpy.CopyRows_management(inmem+"\\Lithology_R",inmem+"\\Lithology_CR")
+                    elif fc.endswith("Landcover_R") == True:
+                        lookmeupl = arcpy.sa.Lookup(inmem+"\\Landcover_R","ClassName")
+                        lookmeupl.save(inmem+"\\Landcover_R")
+                        percent(inmem+"\\Landcover_R",inmem+"\\Landcover_ST","ClassName")
+                        arcpy.CopyRows_management(inmem+"\\Landcover_R",inmem+"\\Landcover_CR")
+                    else:
+                        p("*** dictionaries starting ")
 
             currentTime = time.clock()
             print(str(currentTime-startTime)+" seconds have elapsed so far")
@@ -1846,7 +2049,11 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Landform_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landform_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            ##arcpy.CopyRaster_management(inmem+"\\cong", r"C:\gis\GeoDescriber\current.gdb\cong")
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Landform_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landform_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -1861,7 +2068,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Lithology_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Lithology_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Lithology_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Lithology_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -1876,7 +2086,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Landcover_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landcover_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Landcover_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landcover_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -2084,7 +2297,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Bioclimate_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Bioclimates_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Bioclimates_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Bioclimates_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -2101,7 +2317,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Lithology_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Lithology_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Lithology_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Lithology_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -2115,7 +2334,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Landcover_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landcover_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Landcover_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landcover_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -2378,7 +2600,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Bioclimate_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Bioclimates_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Bioclimates_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Bioclimates_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -2392,7 +2617,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Landform_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landform_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Landform_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landform_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -2410,7 +2638,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Landcover_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landcover_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Landcover_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landcover_CR", "Value", ["Value","ClassName"])
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
                                 count0 = row[0]
@@ -2620,7 +2851,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Bioclimate_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Bioclimates_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Bioclimates_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Bioclimates_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -2634,7 +2868,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Landform_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landform_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Landform_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Landform_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -2648,7 +2885,10 @@ def GeoDescriber():
                         	arcpy.Delete_management(feature)
                         cong=arcpy.sa.Con(inmem+"\\extractg",inmem+"\\Lithology_R")
                         cong.save(inmem+"\\cong")
-                        d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Lithology_CR", "Value", ["Value","ClassName"])
+                        if arcversion == '10.5.1':
+                            JoinField_Workaround(inmem+"\\cong", "Value", inmem+"\\Lithology_CR", "Value", ["Value","ClassName"])
+                        else:
+                            d=arcpy.JoinField_management (inmem+"\\cong", "Value", inmem+"\\Lithology_CR", "Value", ["Value","ClassName"])
                         sumLandCover = 0
                         with arcpy.da.SearchCursor(inmem+"\\cong",["Count","Value","ClassName"]) as cursor:
                             for row in sorted(cursor):
@@ -2673,7 +2913,11 @@ def GeoDescriber():
                             feature = os.path.join(inmem,'Population_RS')
                             if arcpy.Exists(feature):
                             	arcpy.Delete_management(feature)
-                            outputRaster = Con(arcpy.Raster(inmem+"\\extractg"),arcpy.Raster(inmem+"\\Population_R"), 0)
+                            if arcversion == '10.5.1':
+                                outputRaster0 = Con(arcpy.Raster(inmem+"\\extractg"),arcpy.Raster(inmem+"\\Population_R"), 0)
+                                outputRaster = Con(outputRaster0 != 65535, outputRaster0)
+                            else:
+                                outputRaster = Con(arcpy.Raster(inmem+"\\extractg"),arcpy.Raster(inmem+"\\Population_R"), 0)
                             od = outputRaster.save(inmem +"\\Population_RS")
                             a=arcpy.sa.ZonalStatisticsAsTable(inmem+"\\extractg","Value",inmem+"\\Population_RS",inmem+"\\stattbl","DATA")
                             if not arcpy.sa.Raster(inmem+"\\Population_RS").maximum > 0:
@@ -3614,8 +3858,13 @@ if __name__ == "__main__":
     # Make sure all temporary datasets are removed from both in_memory and disk.
     CleanUp()
 
-    global currentTime
+    ##global currentTime
     currentTime = 0
+    arcversion = arcpy.GetInstallInfo()['Version']
+    if arcversion == '10.5.1':
+        print("running 10.5.1")
+    else:
+        print("not running 10.5.1")
     print("0 seconds have elapsed so far")
     print("Adding field...")
     arcpy.AddField_management (inFeatLyr, "Description", "TEXT", "", "", "50000")
